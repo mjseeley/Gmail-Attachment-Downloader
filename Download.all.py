@@ -6,7 +6,7 @@
 
 import email
 import hashlib
-# import getpass
+import getpass
 import imaplib
 import os
 from collections import defaultdict
