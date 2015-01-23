@@ -39,7 +39,7 @@ userName = raw_input('Enter your GMail username: ')
 password = getpass.getpass('Enter your password: ')
 
 imapSession = imaplib.IMAP4_SSL('imap.gmail.com')
-typ, accountDetails = imapSession.login(userName, passwd)
+typ, accountDetails = imapSession.login(userName, password)
 
 print typ
 print accountDetails
