@@ -23,7 +23,7 @@ def get_hash(file_to_hash):
     try:
         with open(file_to_hash, 'rb') as afile:
             buf = afile.read(blocksize)
-            while len(buf) > 0:
+            while buf:
                 hasher.update(buf)
                 buf = afile.read(blocksize)
     except IOError as err:
@@ -71,15 +71,14 @@ for msgId in data[0].split():
         fileName = part.get_filename()
         if fileName is not None:
             fileName = ''.join(x for x in fileName.splitlines())
-        if bool(fileName):
+        if fileName:
             filePath = os.path.join(detach_dir, 'attachments', 'temp.attachment')
             if os.path.isfile(filePath):
                 os.remove(filePath)
             if not os.path.isfile(filePath):
                 # print 'Processing: {file}'.format(file=fileName)
-                fp = open(filePath, 'wb')
-                fp.write(part.get_payload(decode=True))
-                fp.close()
+                with open(filePath, 'wb') as fp:
+                    fp.write(part.get_payload(decode=True))
                 x_hash = get_hash(filePath)
 
                 if x_hash in fileNameList_dict[fileName]:
