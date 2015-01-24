@@ -16,21 +16,6 @@ fileNameCounter = Counter()
 fileNameHashes = defaultdict(set)
 
 
-def get_hash(file_to_hash):
-    # return unique hash of file
-    blocksize = 65536
-    hasher = hashlib.md5()
-    try:
-        with open(file_to_hash, 'rb') as afile:
-            buf = afile.read(blocksize)
-            while buf:
-                hasher.update(buf)
-                buf = afile.read(blocksize)
-    except IOError as err:
-        print err
-    return hasher.hexdigest()
-
-
 detach_dir = '.'
 if 'attachments' not in os.listdir(detach_dir):
     os.mkdir('attachments')
@@ -70,45 +55,37 @@ for msgId in data[0].split():
             continue
         fileName = part.get_filename()
         if fileName is not None:
-            fileName = ''.join(x for x in fileName.splitlines())
+            fileName = ''.join(fileName.splitlines())
         if fileName:
-            filePath = os.path.join(detach_dir, 'attachments', 'temp.attachment')
-            if os.path.isfile(filePath):
-                os.remove(filePath)
-            if not os.path.isfile(filePath):
-                # print 'Processing: {file}'.format(file=fileName)
-                with open(filePath, 'wb') as fp:
-                    fp.write(part.get_payload(decode=True))
-                x_hash = get_hash(filePath)
+            # print 'Processing: {file}'.format(file=fileName)
+            payload = part.get_payload(decode=True)
+            x_hash = hashlib.md5(payload).hexdigest()
 
-                if x_hash in fileNameHashes[fileName]:
-                    print '\tSkipping duplicate file: {file}'.format(file=fileName)
-
-                else:
-                    fileNameCounter[fileName] += 1
-                    fileStr, fileExtension = os.path.splitext(fileName)
-                    if fileNameCounter[fileName] > 1:
-                        new_fileName = '{file}({suffix}){ext}'.format(suffix=fileNameCounter[fileName],
-                                                                      file=fileStr, ext=fileExtension)
-                    else:
-                        new_fileName = fileName
-                    fileNameHashes[fileName].add(x_hash)
-                    hash_path = os.path.join(detach_dir, 'attachments', new_fileName)
-                    if not os.path.isfile(hash_path):
-                        if new_fileName == fileName:
-                            print '\tStoring: {file}'.format(file=fileName)
-                        else:
-                            print('\tRenaming and storing: {file} to {new_file}'.format(file=fileName,
-                                                                                        new_file=new_fileName))
-                        try:
-                            os.rename(filePath, hash_path)
-                        except:
-                            print 'Could not store: {file} it has a shitty file name or path under {op_sys}.'.format(
-                                file=hash_path, op_sys=platform.system())
-                    elif os.path.isfile(hash_path):
-                        print '\tExists in destination: {file}'.format(file=new_fileName)
-                if os.path.isfile(filePath):
-                    os.remove(filePath)
+            if x_hash in fileNameHashes[fileName]:
+                print '\tSkipping duplicate file: {file}'.format(file=fileName)
+                continue
+            fileNameCounter[fileName] += 1
+            fileStr, fileExtension = os.path.splitext(fileName)
+            if fileNameCounter[fileName] > 1:
+                new_fileName = '{file}({suffix}){ext}'.format(suffix=fileNameCounter[fileName],
+                                                              file=fileStr, ext=fileExtension)
+                print('\tRenaming and storing: {file} to {new_file}'.format(file=fileName,
+                                                                                new_file=new_fileName))
+            else:
+                new_fileName = fileName
+                print '\tStoring: {file}'.format(file=fileName)
+            fileNameHashes[fileName].add(x_hash)
+            file_path = os.path.join(detach_dir, 'attachments', new_fileName)
+            if os.path.exists(file_path):
+                print '\tExists in destination: {file}'.format(file=new_fileName)
+                continue
+            try:
+                with open(file_path, 'wb') as fp:
+                    fp.write(payload)
+            except:
+                print 'Could not store: {file} it has a shitty file name or path under {op_sys}.'.format(
+                    file=file_path, op_sys=platform.system())
+                    
 
 imapSession.close()
 imapSession.logout()
