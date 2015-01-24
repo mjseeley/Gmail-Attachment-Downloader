@@ -9,10 +9,10 @@ import hashlib
 import getpass
 import imaplib
 import os
-from collections import defaultdict
+from collections import defaultdict, Counter
 import platform
 
-fileNameCount_dict = defaultdict(int)
+fileNameCounter = Counter()
 fileNameList_dict = defaultdict(list)
 
 
@@ -86,10 +86,10 @@ for msgId in data[0].split():
                     print '\tSkipping duplicate file: {file}'.format(file=fileName)
 
                 else:
-                    fileNameCount_dict[fileName] += 1
+                    fileNameCounter[fileName] += 1
                     fileStr, fileExtension = os.path.splitext(fileName)
-                    if fileNameCount_dict[fileName] > 1:
-                        new_fileName = '{file}({suffix}){ext}'.format(suffix=fileNameCount_dict[fileName],
+                    if fileNameCounter[fileName] > 1:
+                        new_fileName = '{file}({suffix}){ext}'.format(suffix=fileNameCounter[fileName],
                                                                       file=fileStr, ext=fileExtension)
                     else:
                         new_fileName = fileName
