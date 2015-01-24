@@ -69,7 +69,7 @@ def SaveAttachmentsFromMailMessage(message, directory):
                 new_fileName = '{file}({suffix}){ext}'.format(suffix=fileNameCounter[fileName],
                                                               file=fileStr, ext=fileExtension)
                 print('\tRenaming and storing: {file} to {new_file}'.format(file=fileName,
-                                                                                new_file=new_fileName))
+                                                                            new_file=new_fileName))
             else:
                 new_fileName = fileName
                 print('\tStoring: {file}'.format(file=fileName))
@@ -82,8 +82,9 @@ def SaveAttachmentsFromMailMessage(message, directory):
                 with open(file_path, 'wb') as fp:
                     fp.write(payload)
             except:
-                print('Could not store: {file} it has a shitty file name or path under {op_sys}.'.format())
-                    file=file_path, op_sys=platform.system())
+                print('Could not store: {file} it has a shitty file name or path under {op_sys}.'.format(
+                    file=file_path,
+                    op_sys=platform.system()))
 
 
 if __name__ == '__main__':
