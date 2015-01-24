@@ -16,37 +16,36 @@ fileNameCounter = Counter()
 fileNameHashes = defaultdict(set)
 
 
-detach_dir = '.'
-if 'attachments' not in os.listdir(detach_dir):
-    os.mkdir('attachments')
+def GenerateMailMessages(userName, password):
+    imapSession = imaplib.IMAP4_SSL('imap.gmail.com')
+    typ, accountDetails = imapSession.login(userName, password)
 
-userName = raw_input('Enter your GMail username: ')
-password = getpass.getpass('Enter your password: ')
-
-imapSession = imaplib.IMAP4_SSL('imap.gmail.com')
-typ, accountDetails = imapSession.login(userName, passwd)
-
-print typ
-print accountDetails
-if typ != 'OK':
-    print 'Not able to sign in!'
-    raise
-
-imapSession.select('[Gmail]/All Mail')
-typ, data = imapSession.search(None, 'ALL')
-if typ != 'OK':
-    print 'Error searching Inbox.'
-    raise
-
-# Iterating over all emails
-for msgId in data[0].split():
-    typ, messageParts = imapSession.fetch(msgId, '(RFC822)')
+    print typ
+    print accountDetails
     if typ != 'OK':
-        print 'Error fetching mail.'
+        print 'Not able to sign in!'
         raise
-    emailBody = messageParts[0][1]
-    mail = email.message_from_string(emailBody)
-    for part in mail.walk():
+
+    imapSession.select('[Gmail]/All Mail')
+    typ, data = imapSession.search(None, 'ALL')
+    if typ != 'OK':
+        print 'Error searching Inbox.'
+        raise
+
+    # Iterating over all emails
+    for msgId in data[0].split():
+        typ, messageParts = imapSession.fetch(msgId, '(RFC822)')
+        if typ != 'OK':
+            print 'Error fetching mail.'
+            raise
+        emailBody = messageParts[0][1]
+        yield email.message_from_string(emailBody)
+    imapSession.close()
+    imapSession.logout()
+
+
+def SaveAttachmentsFromMailMessage(message, directory):
+    for part in message.walk():
         if part.get_content_maintype() == 'multipart':
             # print part.as_string()
             continue
@@ -75,7 +74,7 @@ for msgId in data[0].split():
                 new_fileName = fileName
                 print '\tStoring: {file}'.format(file=fileName)
             fileNameHashes[fileName].add(x_hash)
-            file_path = os.path.join(detach_dir, 'attachments', new_fileName)
+            file_path = os.path.join(directory, new_fileName)
             if os.path.exists(file_path):
                 print '\tExists in destination: {file}'.format(file=new_fileName)
                 continue
@@ -85,7 +84,12 @@ for msgId in data[0].split():
             except:
                 print 'Could not store: {file} it has a shitty file name or path under {op_sys}.'.format(
                     file=file_path, op_sys=platform.system())
-                    
 
-imapSession.close()
-imapSession.logout()
+
+if __name__ == '__main__':
+    userName = raw_input('Enter your GMail username: ')
+    password = getpass.getpass('Enter your password: ')
+    if 'attachments' not in os.listdir(os.getcwd()):
+        os.mkdir('attachments')
+    for msg in GenerateMailMessages(userName, password):
+        SaveAttachmentsFromMailMessage(msg, 'attachments')
