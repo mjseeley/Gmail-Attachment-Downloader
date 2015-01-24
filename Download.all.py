@@ -20,23 +20,23 @@ def GenerateMailMessages(userName, password):
     imapSession = imaplib.IMAP4_SSL('imap.gmail.com')
     typ, accountDetails = imapSession.login(userName, password)
 
-    print typ
-    print accountDetails
+    print(typ)
+    print(accountDetails)
     if typ != 'OK':
-        print 'Not able to sign in!'
+        print('Not able to sign in!')
         raise
 
     imapSession.select('[Gmail]/All Mail')
     typ, data = imapSession.search(None, 'ALL')
     if typ != 'OK':
-        print 'Error searching Inbox.'
+        print('Error searching Inbox.')
         raise
 
     # Iterating over all emails
     for msgId in data[0].split():
         typ, messageParts = imapSession.fetch(msgId, '(RFC822)')
         if typ != 'OK':
-            print 'Error fetching mail.'
+            print('Error fetching mail.')
             raise
         emailBody = messageParts[0][1]
         yield email.message_from_string(emailBody)
@@ -47,21 +47,21 @@ def GenerateMailMessages(userName, password):
 def SaveAttachmentsFromMailMessage(message, directory):
     for part in message.walk():
         if part.get_content_maintype() == 'multipart':
-            # print part.as_string()
+            # print(part.as_string())
             continue
         if part.get('Content-Disposition') is None:
-            # print part.as_string()
+            # print(part.as_string())
             continue
         fileName = part.get_filename()
         if fileName is not None:
             fileName = ''.join(fileName.splitlines())
         if fileName:
-            # print 'Processing: {file}'.format(file=fileName)
+            # print('Processing: {file}'.format(file=fileName))
             payload = part.get_payload(decode=True)
             x_hash = hashlib.md5(payload).hexdigest()
 
             if x_hash in fileNameHashes[fileName]:
-                print '\tSkipping duplicate file: {file}'.format(file=fileName)
+                print('\tSkipping duplicate file: {file}'.format(file=fileName))
                 continue
             fileNameCounter[fileName] += 1
             fileStr, fileExtension = os.path.splitext(fileName)
@@ -72,17 +72,17 @@ def SaveAttachmentsFromMailMessage(message, directory):
                                                                                 new_file=new_fileName))
             else:
                 new_fileName = fileName
-                print '\tStoring: {file}'.format(file=fileName)
+                print('\tStoring: {file}'.format(file=fileName))
             fileNameHashes[fileName].add(x_hash)
             file_path = os.path.join(directory, new_fileName)
             if os.path.exists(file_path):
-                print '\tExists in destination: {file}'.format(file=new_fileName)
+                print('\tExists in destination: {file}'.format(file=new_fileName))
                 continue
             try:
                 with open(file_path, 'wb') as fp:
                     fp.write(payload)
             except:
-                print 'Could not store: {file} it has a shitty file name or path under {op_sys}.'.format(
+                print('Could not store: {file} it has a shitty file name or path under {op_sys}.'.format())
                     file=file_path, op_sys=platform.system())
 
 
