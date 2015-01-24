@@ -13,7 +13,7 @@ from collections import defaultdict, Counter
 import platform
 
 fileNameCounter = Counter()
-fileNameList_dict = defaultdict(list)
+fileNameHashes = defaultdict(set)
 
 
 def get_hash(file_to_hash):
@@ -81,7 +81,7 @@ for msgId in data[0].split():
                     fp.write(part.get_payload(decode=True))
                 x_hash = get_hash(filePath)
 
-                if x_hash in fileNameList_dict[fileName]:
+                if x_hash in fileNameHashes[fileName]:
                     print '\tSkipping duplicate file: {file}'.format(file=fileName)
 
                 else:
@@ -92,7 +92,7 @@ for msgId in data[0].split():
                                                                       file=fileStr, ext=fileExtension)
                     else:
                         new_fileName = fileName
-                    fileNameList_dict[fileName].append(x_hash)
+                    fileNameHashes[fileName].add(x_hash)
                     hash_path = os.path.join(detach_dir, 'attachments', new_fileName)
                     if not os.path.isfile(hash_path):
                         if new_fileName == fileName:
