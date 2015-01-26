@@ -1,8 +1,13 @@
-# Download ALL attachments from GMAIL
-# Make sure you have IMAP enabled in your gmail settings.
-# If you are using 2 step verification you may need an APP Password.
-# https://support.google.com/accounts/answer/185833
-#
+# Download ALL attachments from GMail
+# 1. Script needs to be run via console not in an IDE, getpass.getpass() will fail otherwise.
+#    https://docs.python.org/2/library/getpass.html
+# 2. Make sure you have IMAP enabled in your GMail settings.
+#    https://support.google.com/mail/troubleshooter/1668960?hl=en
+# 3. If you are using 2 step verification you may need an APP Password.
+#    https://support.google.com/accounts/answer/185833
+# 4. Reference information for GMail IMAP extension can be found here.
+#    https://developers.google.com/gmail/imap_extensions
+
 
 import email
 import hashlib
@@ -58,34 +63,38 @@ def SaveAttachmentsFromMailMessage(message, directory):
         if fileName:
             # print('Processing: {file}'.format(file=fileName))
             payload = part.get_payload(decode=True)
-            x_hash = hashlib.md5(payload).hexdigest()
+            if payload:
+                x_hash = hashlib.md5(payload).hexdigest()
 
-            if x_hash in fileNameHashes[fileName]:
-                print('\tSkipping duplicate file: {file}'.format(file=fileName))
-                continue
-            fileNameCounter[fileName] += 1
-            fileStr, fileExtension = os.path.splitext(fileName)
-            if fileNameCounter[fileName] > 1:
-                new_fileName = '{file}({suffix}){ext}'.format(suffix=fileNameCounter[fileName],
-                                                              file=fileStr, ext=fileExtension)
-                print('\tRenaming and storing: {file} to {new_file}'.format(file=fileName,
-                                                                            new_file=new_fileName))
+                if x_hash in fileNameHashes[fileName]:
+                    print('\tSkipping duplicate file: {file}'.format(file=fileName))
+                    continue
+                fileNameCounter[fileName] += 1
+                fileStr, fileExtension = os.path.splitext(fileName)
+                if fileNameCounter[fileName] > 1:
+                    new_fileName = '{file}({suffix}){ext}'.format(suffix=fileNameCounter[fileName],
+                                                                  file=fileStr, ext=fileExtension)
+                    print('\tRenaming and storing: {file} to {new_file}'.format(file=fileName,
+                                                                                new_file=new_fileName))
+                else:
+                    new_fileName = fileName
+                    print('\tStoring: {file}'.format(file=fileName))
+                fileNameHashes[fileName].add(x_hash)
+                file_path = os.path.join(directory, new_fileName)
+                if os.path.exists(file_path):
+                    print('\tExists in destination: {file}'.format(file=new_fileName))
+                    continue
+                try:
+                    with open(file_path, 'wb') as fp:
+                        fp.write(payload)
+                except:
+                    print('Could not store: {file} it has a shitty file name or path under {op_sys}.'.format(
+                        file=file_path,
+                        op_sys=platform.system()))
             else:
-                new_fileName = fileName
-                print('\tStoring: {file}'.format(file=fileName))
-            fileNameHashes[fileName].add(x_hash)
-            file_path = os.path.join(directory, new_fileName)
-            if os.path.exists(file_path):
-                print('\tExists in destination: {file}'.format(file=new_fileName))
+                print('Attachment {file} was returned as type: {ftype} skipping...'.format(file=fileName,
+                                                                                           ftype=type(payload)))
                 continue
-            try:
-                with open(file_path, 'wb') as fp:
-                    fp.write(payload)
-            except:
-                print('Could not store: {file} it has a shitty file name or path under {op_sys}.'.format(
-                    file=file_path,
-                    op_sys=platform.system()))
-
 
 if __name__ == '__main__':
     userName = raw_input('Enter your GMail username: ')
