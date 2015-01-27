@@ -32,7 +32,7 @@ def GenerateMailMessages(userName, password):
         raise
 
     imapSession.select('[Gmail]/All Mail')
-    typ, data = imapSession.search(None, 'ALL')
+    typ, data = imapSession.search(None, '(X-GM-RAW "has:attachment")')
     if typ != 'OK':
         print('Error searching Inbox.')
         raise
