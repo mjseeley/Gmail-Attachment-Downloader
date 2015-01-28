@@ -1,7 +1,7 @@
 # Gmail-Attachment-Downloader
 Downloads all unique files from Gmail attachments.
 
-``gmail_downer.py`` is hosted at Github <https://github.com/mjseeley/Gmail-Attachment-Downloader/gmail_downer.py>
+``gmail_downer.py`` is hosted at Github <https://github.com/mjseeley/Gmail-Attachment-Downloader/>
 
 # Use:
 
