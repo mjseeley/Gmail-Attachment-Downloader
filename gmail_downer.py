@@ -19,9 +19,23 @@ import platform
 
 fileNameCounter = Counter()
 fileNameHashes = defaultdict(set)
+NewMsgIDs = set()
+ProcessedMsgIDs = set()
 
 
-def GenerateMailMessages(userName, password):
+def recover(resumeFile):
+    if os.path.exists(resumeFile):
+        print('Recovery file found resuming...')
+        with open(resumeFile) as f:
+            processedIds = f.read()
+            for ProcessedId in processedIds.split(','):
+                ProcessedMsgIDs.add(ProcessedId)
+    else:
+        print('No Recovery file found.')
+        open(resumeFile, 'a').close()
+
+
+def GenerateMailMessages(userName, password, resumeFile):
     imapSession = imaplib.IMAP4_SSL('imap.gmail.com')
     typ, accountDetails = imapSession.login(userName, password)
 
@@ -33,18 +47,25 @@ def GenerateMailMessages(userName, password):
 
     imapSession.select('[Gmail]/All Mail')
     typ, data = imapSession.search(None, '(X-GM-RAW "has:attachment")')
+    # typ, data = imapSession.search(None, 'ALL')
     if typ != 'OK':
         print('Error searching Inbox.')
         raise
 
     # Iterating over all emails
     for msgId in data[0].split():
+        NewMsgIDs.add(msgId)
         typ, messageParts = imapSession.fetch(msgId, '(RFC822)')
         if typ != 'OK':
             print('Error fetching mail.')
             raise
         emailBody = messageParts[0][1]
-        yield email.message_from_string(emailBody)
+        if msgId not in ProcessedMsgIDs:
+            yield email.message_from_string(emailBody)
+            ProcessedMsgIDs.add(msgId)
+            with open(resumeFile, "a") as resume:
+                resume.write('{id},'.format(id=msgId))
+
     imapSession.close()
     imapSession.logout()
 
@@ -97,9 +118,12 @@ def SaveAttachmentsFromMailMessage(message, directory):
                 continue
 
 if __name__ == '__main__':
+    resumeFile = file_path = os.path.join('resume.txt')
     userName = raw_input('Enter your GMail username: ')
     password = getpass.getpass('Enter your password: ')
+    recover(resumeFile)
     if 'attachments' not in os.listdir(os.getcwd()):
         os.mkdir('attachments')
-    for msg in GenerateMailMessages(userName, password):
+    for msg in GenerateMailMessages(userName, password, resumeFile):
         SaveAttachmentsFromMailMessage(msg, 'attachments')
+    os.remove(file_path)
