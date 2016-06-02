@@ -1,4 +1,4 @@
-# patch-10 and up will likely only work with Python 3 due to minor differences in the impalib and email modules.
+* patch-10 and up will likely only work with Python 3 due to minor differences in the impalib and email modules.
 # Gmail-Attachment-Downloader
 Downloads all unique files from Gmail attachments.
 
