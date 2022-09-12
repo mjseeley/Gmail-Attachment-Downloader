@@ -44,3 +44,8 @@ Temporary Items
 *.name
 *.xml
 .idea/Gmail-Attachment-Downloader.iml
+attachments
+attachments/*
+__pycache__/
+
+resume.txt
