@@ -74,7 +74,6 @@ def generate_mail_messages(gmail_user_name, p_word, resume_file):
 
 
 def save_attachments(message, directory, sort_by):
-
     # get additional details..
     msg_from = message["From"]
     msg_from_domain = message["From"]
@@ -161,8 +160,7 @@ if __name__ == "__main__":
         3. File Type (after download)
         4. Date
         5. Sender
-        6. Sender Domain
-        7. Test\n"""
+        6. Sender Domain\n"""
     )
 
     match sort_by:
@@ -187,9 +185,9 @@ if __name__ == "__main__":
         case "6":
             for msg in generate_mail_messages(user_name, password, resumeFile):
                 save_attachments(msg, organize.ByDomain(f"{save_path}", msg))
-        case "7":
-            for msg in generate_mail_messages(user_name, password, resumeFile):
-                save_attachments(msg, organize.ByExtTest(f"{save_path}", msg))
+        # case "7":
+        #     for msg in generate_mail_messages(user_name, password, resumeFile):
+        #         save_attachments(msg, organize.ByExtTest(f"{save_path}", msg))
         case other:
             for msg in generate_mail_messages(user_name, password, resumeFile):
                 save_attachments(msg, f"{save_path}")

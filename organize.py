@@ -23,7 +23,6 @@ def build_directory(directory):
 
 
 def ByExtension(path):
-
     files = (
         file for file in os.listdir(path) if os.path.isfile(os.path.join(path, file))
     )
@@ -211,23 +210,23 @@ def ByDomain(save_folder, msg):
     return new_save_folder
 
 
-def ByExtTest(save_folder, msg):
-    # Broken, If multiples files are attached, it will put all files in the same folder with the extension of the first file.
-    for part in msg.walk():
-        if part.get_content_maintype() == "multipart":
-            continue
-        if part.get("Content-Disposition") is None:
-            continue
-        filename = part.get_filename()
-        if filename is not None:
-            file_extension = filename.split(".")
-            if len(file_extension) < 2:
-                subfolder = "other"
-            else:
-                subfolder = file_extension[-1]
-            build_directory(save_folder + "\\" + subfolder)
-            new_save_folder = save_folder + "\\" + subfolder
-            return new_save_folder
+# def ByExtTest(save_folder, msg):
+#     # Broken, If multiples files are attached, it will put all files in the same folder with the extension of the first file.
+#     for part in msg.walk():
+#         if part.get_content_maintype() == "multipart":
+#             continue
+#         if part.get("Content-Disposition") is None:
+#             continue
+#         filename = part.get_filename()
+#         if filename is not None:
+#             file_extension = filename.split(".")
+#             if len(file_extension) < 2:
+#                 subfolder = "other"
+#             else:
+#                 subfolder = file_extension[-1]
+#             build_directory(save_folder + "\\" + subfolder)
+#             new_save_folder = save_folder + "\\" + subfolder
+#             return new_save_folder
 
 
 if __name__ == "__main__":
