@@ -1,192 +1,298 @@
-# Description: This script downloads attachments from all emails in the user's Gmail account and saves them in a specified directory. It also sorts the attachments based on the user's preference.
+# Description: This script connects to a Gmail account via IMAP, identifies all emails containing attachments, and downloads those attachments. Users can specify a directory to save the attachments and choose from various sorting methods, such as by file extension, size, type, sender, or date. The script also supports session recovery to handle interruptions and avoid redownloading previously processed emails.
 
-import ast
-import email
-import hashlib
-import getpass
+from email import message, header, message_from_bytes
+from hashlib import md5
+from getpass import getpass
 import imaplib
 import os
+import logging
 from collections import defaultdict, Counter
-import organize
+from pathlib import Path
 from enum import Enum
+import organize
 
-#TODO: prevent overwriting of files on resume since the count has been reset (tag the files with the message id?)
+# Setting up logging
+logging.basicConfig(
+    level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
+# TODO: prevent overwriting of files on resume since the count has been reset (tag the files with the message id?)
+
 
 class SortMethod(Enum):
-    EXTENSION = 1
-    SIZE = 2
-    TYPE = 3
-    DATE = 4
-    SENDER = 5
-    DOMAIN = 6
+    EXTENSION = 1  # working
+    SIZE = 2  # working
+    MIMETYPE = 3  # working
+    DATE = 4  # working but creates empty folders may be due to files already being saved elsewhere and matching the hash.
+    SENDER = 5  #  working
 
 
-def recover(resume_file, processed_id_file):
+IMAP_SERVER = "imap.gmail.com"
+
+
+def recover(
+    resume_file: Path, processed_id_file: Path
+) -> tuple[str, Path, SortMethod, set]:
+    """
+    Recovers the last state of the script from saved files if available.
+
+    Args:
+        resume_file (Path): The file containing saved state information.
+        processed_id_file (Path): The file containing IDs of processed messages.
+
+    Returns:
+        tuple: A tuple containing user_name, save_path, sort_by, and processed_msg_ids.
+    """
     user_name, save_path, sort_by = None, None, None
-    ProcessedMsgIDs = set()
-    if os.path.exists(resume_file):
-        print("Recovery files found would you like to recover the last state? (y/n)")
-        recover = input()
-        if recover.lower() == "y":
-            print("Recovering last state...")
-            if os.path.exists(processed_id_file):
-                with open(processed_id_file) as f:
+    processed_msg_ids = set()
+    if resume_file.exists():
+        recover = input(
+            "Recovery files found. Would you like to recover the last state? (y/n) "
+        ).lower()
+        if recover == "y":
+            logging.info("Recovering last state...")
+            if processed_id_file.exists():
+                with processed_id_file.open() as f:
                     processed_ids = f.read()
-                    for ProcessedId in filter(None, processed_ids.split(",")):
-                        ProcessedMsgIDs.add(ast.literal_eval(ProcessedId))
-            with open(resume_file) as f:
-                last_state = f.read()
-                user_name = last_state.split("\n")[0].split(" = ")[1]
-                save_path = last_state.split("\n")[1].split(" = ")[1]
-                sort_by = SortMethod[last_state.split("\n")[2].split(" = ")[1]]
+                    processed_msg_ids = set(filter(None, processed_ids.split(",")))
+            processed_msg_ids = {msg_id.strip() for msg_id in processed_msg_ids}
+            with resume_file.open() as f:
+                last_state = f.read().splitlines()
+                user_name = last_state[0].split(" = ")[1]
+                save_path = Path(last_state[1].split(" = ")[1])
+                sort_by = SortMethod[last_state[2].split(" = ")[1]]
         else:
-            print("Recovery file found but not recovered. Deleting recovery files...")
-            os.remove(processed_id_file)
-            os.remove(resume_file)
-            return ProcessedMsgIDs
+            logging.info(
+                "Recovery file found but not recovered. Deleting recovery files..."
+            )
+            processed_id_file.unlink(missing_ok=True)
+            resume_file.unlink(missing_ok=True)
     else:
-        print("No Recovery file found.")
-    open(processed_id_file, "a").close()
-    open(resume_file, "a").close()
-    return user_name, save_path, sort_by, ProcessedMsgIDs
+        logging.info("No Recovery file found.")
+    resume_file.touch()
+    processed_id_file.touch()
+    return user_name, save_path, sort_by, processed_msg_ids
 
 
-def save_state(resume_file, user_name, save_path, sort_by):
-    with open(resume_file, "w") as f:
+def save_state(resume_file: Path, user_name: str, save_path: Path, sort_by: SortMethod):
+    """
+    Saves the current state of the script for recovery in case of interruption.
+
+    Args:
+        resume_file (Path): The file to save the state information.
+        user_name (str): The Gmail username.
+        save_path (Path): The directory path where attachments are saved.
+        sort_by (SortMethod): The sorting method used for organizing attachments.
+    """
+    with resume_file.open("w") as f:
         f.write(f"user_name = {user_name}\n")
         f.write(f"save_path = {save_path}\n")
         f.write(f"sort_by = {sort_by.name}\n")
-    open(resume_file, "a").close()
 
 
-def decode_mime_words(s):
-    """Decode MIME encoded words in a string to a UTF-8 string."""
-    decoded_words = email.header.decode_header(s)
-    return ''.join(word.decode(encoding or 'utf-8') if isinstance(word, bytes) else word 
-                   for word, encoding in decoded_words)
+def decode_mime_words(s: str) -> str:
+    """
+    Decodes MIME-encoded words in an email header to a UTF-8 string.
+
+    Args:
+        s (str): The MIME-encoded string.
+
+    Returns:
+        str: The decoded string.
+    """
+    decoded_words = header.decode_header(s)
+    return "".join(
+        word.decode(encoding or "utf-8") if isinstance(word, bytes) else word
+        for word, encoding in decoded_words
+    )
 
 
-def generate_mail_messages(gmail_user_name, password, processed_id_file, processed_ids, max_attempts=3):
-    with imaplib.IMAP4_SSL("imap.gmail.com") as imap_session:
-        imap_session.login(gmail_user_name, password)
+def generate_mail_messages(
+    gmail_user_name: str,
+    password: str,
+    processed_id_file: Path,
+    processed_ids: set,
+    max_attempts: int = 3,
+):
+    """
+    Generates email messages from the Gmail account that have attachments.
+
+    Args:
+        gmail_user_name (str): The Gmail username.
+        password (str): The Gmail password.
+        processed_id_file (Path): The file containing IDs of processed messages.
+        processed_ids (set): The set of processed message IDs.
+        max_attempts (int, optional): Maximum attempts to fetch a message. Defaults to 3.
+
+    Yields:
+        message.Message: The email message with attachments.
+    """
+    with imaplib.IMAP4_SSL(IMAP_SERVER) as imap_session:
+        try:
+            imap_session.login(gmail_user_name, password)
+            logging.info("Login successful.")
+        except imaplib.IMAP4.error:
+            logging.error("Login failed. Please check your credentials.")
+            return
         imap_session.select('"[Gmail]/All Mail"')
         session_typ, data = imap_session.search(None, '(X-GM-RAW "has:attachment")')
         if session_typ != "OK":
             raise Exception("Error searching Inbox.")
         for msg_id in data[0].split():
-            if msg_id not in processed_ids:
-                attempts = 0
-                while attempts < max_attempts:
+            if msg_id.decode() not in processed_ids:
+                for attempt in range(max_attempts):
                     msg_typ, message_parts = imap_session.fetch(msg_id, "(RFC822)")
                     if msg_typ == "OK":
-                        email_body = message_parts[0][1]
-                        yield email.message_from_bytes(email_body)
+                        yield message_from_bytes(message_parts[0][1])
                         processed_ids.add(msg_id)
-                        with open(processed_id_file, "a") as resume:
+                        with processed_id_file.open("a") as resume:
                             resume.write(f"{msg_id},")
-                        break  # Break out of the retry loop
+                        break
                     else:
-                        print(f"Error fetching mail {msg_id}, attempt {attempts + 1}/{max_attempts}")
-                        attempts += 1
-                if attempts == max_attempts:
-                    print(f"Failed to fetch mail {msg_id} after {max_attempts} attempts.")
+                        logging.warning(
+                            f"Error fetching mail {msg_id}, attempt {attempt + 1}/{max_attempts}"
+                        )
+                else:
+                    logging.error(
+                        f"Failed to fetch mail {msg_id} after {max_attempts} attempts."
+                    )
 
 
-def save_attachments(message, directory, sort_by, file_name_counter, file_name_hashes):
-    # Extract additional details needed for sorting
+def save_attachments(
+    message: message.Message,
+    directory: Path,
+    sort_by: SortMethod,
+    file_name_counter: Counter,
+    file_name_hashes: defaultdict,
+):
+    """
+    Saves attachments from an email message to the specified directory.
+
+    Args:
+        message (message.Message): The email message containing attachments.
+        directory (Path): The base directory where attachments will be saved.
+        sort_by (SortMethod): The sorting method used for organizing attachments.
+        file_name_counter (Counter): A counter to manage duplicate file names.
+        file_name_hashes (defaultdict): A dictionary to track unique attachments by hash.
+    """
     msg_from = message["From"]
     msg_date = message["Date"]
-    msg_domain = (msg_from.split("@")[-1]).replace(">","") if "@" in msg_from else None
+    msg_domain = (msg_from.split("@")[-1]).replace(">", "") if "@" in msg_from else None
 
-    # Additional processing based on sort method
     if sort_by == SortMethod.DATE:
-        directory = organize.ByDate(directory, msg_date)
+        directory = organize.by_date(directory, msg_date)
     elif sort_by == SortMethod.SENDER:
-        directory = organize.BySenderEmail(directory, msg_from)
-    elif sort_by == SortMethod.DOMAIN:
-        directory = organize.ByDomain(directory, msg_domain)
+        directory = organize.by_sender_email(directory, msg_from)
 
     for part in message.walk():
-        if part.get_content_maintype() == "multipart" or part.get("Content-Disposition") is None:
+        if (
+            part.get_content_maintype() == "multipart"
+            or part.get("Content-Disposition") is None
+        ):
             continue
         file_name = part.get_filename()
         if file_name:
-            file_name = decode_mime_words(file_name)
-            file_name = file_name.replace("/", "_")
-            file_name = "".join(file_name.splitlines())
+            logging.debug(f"Original file name: {file_name}")
+            file_name = (
+                decode_mime_words(file_name)
+                .replace("/", "_")
+                .replace("\\", "_")
+                .replace(":", "_")
+                .replace("*", "_")
+                .replace("?", "_")
+                .replace('"', "_")
+                .replace("<", "_")
+                .replace(">", "_")
+                .replace("|", "_")
+                .replace("\n", "")
+                .replace("\r", "")
+            )
+            logging.debug(f"Sanitized file name: {file_name}")
+            # Limit the file name length to avoid exceeding the Windows path length limit
+            max_length = 150
+            if len(file_name) > max_length:
+                file_name = file_name[:max_length] + os.path.splitext(file_name)[1]
             payload = part.get_payload(decode=True)
             if payload:
-                x_hash = hashlib.md5(payload).hexdigest()
+                x_hash = md5(payload).hexdigest()
                 if x_hash not in file_name_hashes[file_name]:
                     file_name_counter[file_name] += 1
                     file_str, file_extension = os.path.splitext(file_name)
-                    new_file_name = f"{file_str}(v.{file_name_counter[file_name]}){file_extension}" if file_name_counter[file_name] > 1 else file_name
-                    # new_file_name = f"{file_str}(msgId.{message}){file_extension}" if file_name_counter[file_name] > 1 else file_name
-                    print(f"\tStoring: {new_file_name}")
+                    new_file_name = (
+                        f"{file_str}(v.{file_name_counter[file_name]}){file_extension}"
+                        if file_name_counter[file_name] > 1
+                        else file_name
+                    )
                     file_name_hashes[file_name].add(x_hash)
                     if sort_by == SortMethod.EXTENSION:
-                        # If the file has no extension, store it in an 'other' folder
-                        if file_extension == '':
-                            file_dir = os.path.join(directory, 'other')
-                        else:
-                            file_dir = os.path.join(directory, file_extension.lower().strip("."))
-                        organize.build_directory(file_dir)
-                        file_path = os.path.join(file_dir, new_file_name)
+                        file_dir = directory / (
+                            file_extension.lower().strip(".")
+                            if file_extension
+                            else "other"
+                        )
                     elif sort_by == SortMethod.SIZE:
-                        file_dir = os.path.join(directory, organize.BySize(len(payload)))
-                        organize.build_directory(file_dir)
-                        file_path = os.path.join(file_dir, new_file_name)
-                    elif sort_by == SortMethod.TYPE:
-                        # If the file has no extension, store it in an 'other' folder
-                        if file_extension == '':
-                            file_dir = os.path.join(directory, 'other')
-                        else:
-                            file_dir = os.path.join(directory, organize.ByType(file_extension))
-                        organize.build_directory(file_dir)
-                        file_path = os.path.join(file_dir, new_file_name)
+                        file_dir = directory / organize.by_size(
+                            len(payload)
+                        )
+                    elif sort_by == SortMethod.MIMETYPE:
+                        file_dir = directory / (
+                            organize.by_mime_type(file_name)
+                        )
                     else:
-                        file_path = os.path.join(directory, new_file_name)
-                    if not os.path.exists(file_path):
-                        with open(file_path, "wb") as fp:
+                        file_dir = directory
+                    file_dir = organize.build_and_return_directory(file_dir)
+                    file_path = Path(rf"\\?\{file_dir / new_file_name}").resolve()
+                    if not file_path.exists():
+                        with file_path.open("wb") as fp:
                             fp.write(payload)
                     else:
-                        print(f"\tExists in destination: {new_file_name}")
+                        logging.info(f"\tExists in destination: {new_file_name}")
 
 
 def main():
+    """
+    Main function that drives the script, handling user input, downloading attachments, and organizing them.
+    """
     file_name_counter = Counter()
     file_name_hashes = defaultdict(set)
-    resume_file = "resume.txt"
-    processed_id_file = "processed_ids.txt"
-    user_name = None
-    password = None
-    save_path = None
-    sort_by = None
-    
-    user_name, save_path, sort_by, processed_ids = recover(resume_file, processed_id_file)
+    resume_file = Path("resume.txt")
+    processed_id_file = Path("processed_ids.txt")
+
+    user_name, save_path, sort_by, processed_ids = recover(
+        resume_file, processed_id_file
+    )
     if user_name is not None:
-        password = getpass.getpass(f"Enter the password for {user_name}: ")
+        password = os.getenv("EMAIL_PASSWORD") or getpass(
+            f"Enter the password for {user_name}: "
+        )
     else:
-        user_name = input("Enter your GMail username: ")
-        password = getpass.getpass("Enter your password: ")
-        save_path = input("Enter Destination path: ")
-        os.makedirs(save_path, exist_ok=True)
-        print(f"Items will be saved in {save_path}.")
-        input("Press enter to continue...")
-        sort_by = SortMethod(int(input("""Enter sort method [1-6]:
+        user_name = input("Enter your Gmail username: ")
+        password = os.getenv("EMAIL_PASSWORD") or getpass("Enter your password: ")
+        save_path = Path(input("Enter Destination path: "))
+        save_path.mkdir(parents=True, exist_ok=True)
+        sort_by = SortMethod(
+            int(
+                input(
+                    """Enter sort method [1-6]:
             1. Extension
             2. Size
-            3. Type
-            4. Date
-            5. Sender
-            6. Domain\n""")))
+            3. MIME Type
+            4. Date Year -> Month -> Day
+            5. Domain -> Sender
+        """
+                )
+            )
+        )
         save_state(resume_file, user_name, save_path, sort_by)
 
-    for msg in generate_mail_messages(user_name, password, processed_id_file, processed_ids):
+    for msg in generate_mail_messages(
+        user_name, password, processed_id_file, processed_ids
+    ):
         save_attachments(msg, save_path, sort_by, file_name_counter, file_name_hashes)
 
-    os.remove(processed_id_file)
-    os.remove(resume_file)
+    processed_id_file.unlink(missing_ok=True)
+    resume_file.unlink(missing_ok=True)
+
 
 if __name__ == "__main__":
     main()
