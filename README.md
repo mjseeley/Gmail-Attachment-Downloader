@@ -44,7 +44,7 @@ python --version
 1. **Clone the Repository**
 
    ```sh
-   git clone <repository-url>
+   git clone https://github.com/mjseeley/Gmail-Attachment-Downloader.git
    cd Gmail-Attachment-Downloader
    ```
 
