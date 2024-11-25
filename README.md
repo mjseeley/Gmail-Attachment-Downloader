@@ -30,6 +30,18 @@ This script connects to a Gmail account via IMAP, identifies all emails containi
   - `pathlib` (Standard Library)
   - `enum` (Standard Library)
   - `organize` (Included Custom Module)
+ 
+## Additional requirements
+
+- **Make sure you have IMAP enabled in your GMail settings.**
+   - https://support.google.com/mail/troubleshooter/1668960?hl=en
+    
+- **If you are using 2 step verification you may need an APP Password.**
+    - https://support.google.com/accounts/answer/185833
+    - https://myaccount.google.com/apppasswords
+    
+- **Reference information for GMail IMAP extension can be found here.**
+    - https://developers.google.com/gmail/imap_extensions
 
 ## Installation
 
