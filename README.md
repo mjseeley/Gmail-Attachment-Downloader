@@ -15,6 +15,7 @@ This script connects to a Gmail account via IMAP, identifies all emails containi
   - Date Year -> Month -> Day
   - Sender Domain -> sender
 - **Session Recovery**: Supports resuming the download process to avoid redownloading attachments.
+- **Environment Variable Support**: Optionally set your password via the `EMAIL_PASSWORD` environment variable.
 
 ## Requirements
 
@@ -29,8 +30,9 @@ This script connects to a Gmail account via IMAP, identifies all emails containi
   - `collections` (Standard Library)
   - `pathlib` (Standard Library)
   - `enum` (Standard Library)
+  - `mimetypes` (Standard Library)
   - `organize` (Included Custom Module)
- 
+
 ## Additional requirements
 
 - **Make sure you have IMAP enabled in your GMail settings.**
@@ -45,14 +47,6 @@ This script connects to a Gmail account via IMAP, identifies all emails containi
 
 ## Installation
 
-Make sure you have Python 3.6 or later installed. You can verify your Python version with:
-
-```sh
-python --version
-```
-
-## Usage
-
 1. **Clone the Repository**
 
    ```sh
@@ -60,42 +54,69 @@ python --version
    cd Gmail-Attachment-Downloader
    ```
 
-2. **Run the Script**
+2. **Verify Python Version**
+
+   Make sure you have Python 3.6 or later installed:
+
+   ```sh
+   python --version
+   ```
+
+## Usage
+
+1. **Run the Script**
 
    ```sh
    python gmail_downer.py
    ```
 
-3. **User Prompts**
+2. **User Prompts**
 
-   - The script will prompt for your Gmail credentials.
+   - The script will prompt for your Gmail credentials (or use the `EMAIL_PASSWORD` environment variable).
    - You will be asked to specify a directory where attachments should be saved.
    - You can select a sorting method to organize the attachments.
 
-4. **Resuming Sessions**
+3. **Resuming Sessions**
    - If interrupted, the script can resume from where it left off by recovering from saved state files (`resume.txt` and `processed_ids.txt`).
+
+### Using Environment Variables
+
+You can set your password as an environment variable to avoid entering it each time:
+
+```sh
+# Linux/macOS
+export EMAIL_PASSWORD="your-app-password"
+
+# Windows (PowerShell)
+$env:EMAIL_PASSWORD="your-app-password"
+
+# Windows (Command Prompt)
+set EMAIL_PASSWORD=your-app-password
+```
 
 ## Sorting Methods Explained
 
 - **Extension**: Organizes files by their extension (e.g., `.pdf`, `.jpg`).
-- **Size**: Organizes files by their size (e.g., tiny, small, large).
+- **Size**: Organizes files by their size into categories:
+  - Tiny: < 10 KB
+  - Small: 10 KB - 100 KB
+  - Medium: 100 KB - 1 MB
+  - Large: 1 MB - 10 MB
+  - Huge: > 10 MB
 - **MIMEType**: Organizes files by general type (e.g., image, text, video).
-- **Date**: Organizes files into folders based on the email date.
-- **Sender**: Organizes files based on the sender's email address.
+- **Date**: Organizes files into folders based on the email date (Year/Month/Day).
+- **Sender**: Organizes files based on the sender's domain and email address.
 
 ## Security Note
 
 The script uses `getpass` to securely input your Gmail password. You will need to set up an [App Password](https://support.google.com/accounts/answer/185833?hl=en) instead of using your regular main Gmail password.
 
-## Example
+## Troubleshooting
 
-To run the script and download all attachments from your Gmail account, use:
-
-```sh
-python gmail_downer.py
-```
-
-You'll be prompted to enter your Gmail credentials, specify a directory for saving attachments, and choose a sorting method.
+- **Login failed**: Ensure IMAP is enabled in your Gmail settings and you are using an App Password if 2FA is enabled.
+- **FileNotFoundError**: Make sure the destination directory path is valid and you have write permissions.
+- **Connection errors**: Check your internet connection and firewall settings. Gmail IMAP uses port 993.
+- **Empty folders created**: This can occur when sorting by date if attachments were already saved elsewhere and matched by hash (duplicate detection).
 
 ## Contributing
 
