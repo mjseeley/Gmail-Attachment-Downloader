@@ -1,84 +1,132 @@
-# Description: This module provides functions to organize downloaded email attachments based on various criteria such as size, type, date, sender, or domain.
+# for each file extension in attachments create a subdolder in the main directory for that extenstion
+# move each file into the corresponding subfolder
 
-from pathlib import Path
-from enum import Enum
-import mimetypes
+from distutils import extension
 import os
 
 
-class SizeCategoryEnum(Enum):
-    TINY = "tiny"
-    SMALL = "small"
-    MEDIUM = "medium"
-    LARGE = "large"
-    HUGE = "huge"
+def build_directory(directory):
+    if not os.path.exists(directory):
+        os.makedirs(directory)
 
 
-def build_and_return_directory(directory: Path) -> Path:
-    """
-    Builds the directory if it does not exist and returns the directory path.
+def BySize(size):
 
-    Args:
-        directory (Path): The path to the directory to be created.
-
-    Returns:
-        Path: The path to the created (or existing) directory.
-    """
-    directory.mkdir(parents=True, exist_ok=True)
-    return directory
-
-
-def by_size(size: int) -> str:
-    """
-    Categorizes a file based on its size.
-
-    Args:
-        size (int): Size of the file in bytes.
-
-    Returns:
-        str: The size category (e.g., "tiny", "small").
-    """
     if size < 10240:
-        return SizeCategoryEnum.TINY.value
+        subfolder = "tiny"
     elif size < 102400:
-        return SizeCategoryEnum.SMALL.value
+        subfolder = "small"
     elif size < 1024000:
-        return SizeCategoryEnum.MEDIUM.value
+        subfolder = "medium"
     elif size < 10240000:
-        return SizeCategoryEnum.LARGE.value
+        subfolder = "large"
     else:
-        return SizeCategoryEnum.HUGE.value
+        subfolder = "huge"
+
+    return subfolder
 
 
-def by_mime_type(extension: str) -> str:
-    """
-    Determines the general type of a file based on its MIME type.
+def ByType(extension):
+    ext = extension.lstrip(".").lower()
+    general_types = {
+        "application": [
+            "exe",
+            "bat",
+            "msi",
+            "com",
+            "vbs",
+            "vbe",
+            "js",
+            "jse",
+            "wsf",
+            "wsh",
+            "ws",
+        ],
+        "audio": ["mp3", "wav", "aiff", "aif", "au", "snd", "mid", "midi"],
+        "image": ["gif", "jpg", "jpeg", "png", "bmp", "tif", "tiff", "ico"],
+        "text": [
+            "txt",
+            "doc",
+            "docx",
+            "odt",
+            "pdf",
+            "rtf",
+            "tex",
+            "wks",
+            "wps",
+            "wpd",
+            "ppt",
+            "pptx",
+            "pps",
+            "ppsx",
+            "pot",
+            "xls",
+            "xlsx",
+            "csv",
+        ],
+        "video": [
+            "mp4",
+            "m4v",
+            "mov",
+            "wmv",
+            "mpg",
+            "mpeg",
+            "m2v",
+            "avi",
+            "flv",
+            "3gp",
+            "3g2",
+        ],
+        "compressed": [
+            "zip",
+            "rar",
+            "7z",
+            "gz",
+            "bz2",
+            "tar",
+            "tgz",
+            "z",
+            "ace",
+            "arj",
+            "bz",
+            "cab",
+            "dmg",
+            "iso",
+            "lzh",
+            "lzma",
+            "rar",
+            "uue",
+            "xz",
+            "zoo",
+        ],
+        "other": [
+            "bin",
+            "dat",
+            "dll",
+            "o",
+            "obj",
+            "so",
+            "class",
+            "jar",
+            "war",
+            "ear",
+            "psd",
+            "psp",
+            "xcf",
+            "html",
+        ],
+    }
 
-    Args:
-        extension (str): The file extension (e.g., ".jpg", ".pdf").
 
-    Returns:
-        str: The general type of the file (e.g., "image", "text", "other").
-    """
-    mime_type, _ = mimetypes.guess_type(extension)
-    if mime_type:
-        main_type, sub_type = mime_type.split("/")
-        return os.path.join(main_type, sub_type)
-    if mime_type is None:
-        return "other"
+    for key, value in general_types.items():
+        if ext in value:
+            return key
+        elif ext is None:
+            return "other"
+    return "other"
 
 
-def by_date(save_folder: Path, date: str) -> Path:
-    """
-    Creates a folder structure based on the date of an email.
-    I tried using datetime.strptime(date, date_format), but it was not able to parse all date formats.
-    Args:
-        save_folder (Path): The base folder where the attachments will be saved.
-        date (str): The date string from the email header.
-
-    Returns:
-        Path: The path to the created directory.
-    """
+def ByDate(save_folder, date):
     # sample date format: 'Fri, 1 Jul 2011 16:21:50 -0500'
     day, month, year = date.split(" ")[1:4]
     if not year.isnumeric():
@@ -88,26 +136,28 @@ def by_date(save_folder: Path, date: str) -> Path:
     if len(year) == 1 and not day.isnumeric():
         day, month, year = date.split(" ")[2:5]
     day = day.lstrip("0")
-    return build_and_return_directory(save_folder / year / month / day)
+    day = day.lstrip("0")
+    new_save_folder = os.path.join(save_folder, year, month, day)
+    build_directory(new_save_folder)
+    return new_save_folder
 
 
-def by_sender_email(save_folder: Path, sender: str) -> Path:
-    """
-    Creates a folder structure based on the sender's email address.
-
-    Args:
-        save_folder (Path): The base folder where the attachments will be saved.
-        sender (str): The sender's email address.
-
-    Returns:
-        Path: The path to the created directory.
-    """
-    domain = (
-        (sender.split("@")[-1]).replace(">", "") if "@" in sender else "unknown_sender"
-    )
+def BySenderEmail(save_folder, sender):
+    domain = (sender.split("@")[-1]).replace(">","") if "@" in sender else None
     if "<" in sender:
         sender = sender.split("<")[1].split(">")[0]
-    return build_and_return_directory(save_folder / domain / sender)
+    new_save_folder = os.path.join(save_folder, domain, sender)
+    build_directory(new_save_folder)
+    return new_save_folder
+
+
+def ByDomain(save_folder, domain):
+    sender_domain = "unknown_sender"
+    sender_domain = domain if domain is not None else "unknown_sender_domain"
+    new_save_folder = os.path.join(save_folder, sender_domain)
+    build_directory(new_save_folder)
+    return new_save_folder
+
 
 
 if __name__ == "__main__":
