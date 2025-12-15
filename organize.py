@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from enum import Enum
+from email.utils import parsedate_to_datetime
 import mimetypes
 import os
 
@@ -67,45 +68,51 @@ def by_mime_type(extension: str) -> Path:
     return Path("other")
 
 
-def by_date(save_folder: Path, date: str) -> Path:
+def by_date(save_folder: Path, date: str | None) -> Path:
     """
-    Creates a folder structure based on the date of an email.
-    I tried using datetime.strptime(date, date_format), but it was not able to parse all date formats.
+    Creates a folder structure based on the date of an email, falling back to
+    an `unknown_date` folder when parsing fails.
+
     Args:
         save_folder (Path): The base folder where the attachments will be saved.
-        date (str): The date string from the email header.
+        date (str | None): The date string from the email header.
 
     Returns:
         Path: The path to the created directory.
     """
-    # sample date format: 'Fri, 1 Jul 2011 16:21:50 -0500'
-    day, month, year = date.split(" ")[1:4]
-    if not year.isnumeric():
-        day, month, year = date.split(" ")[0:3]
-    if len(year) == 2:
-        year = "20" + year
-    if len(year) == 1 and not day.isnumeric():
-        day, month, year = date.split(" ")[2:5]
-    day = day.lstrip("0")
+    try:
+        parsed = parsedate_to_datetime(date) if date else None
+    except Exception:
+        parsed = None
+
+    if not parsed:
+        return build_and_return_directory(save_folder / "unknown_date")
+
+    parsed_date = parsed.date()
+    year = str(parsed_date.year)
+    month = parsed_date.strftime("%b")  # Use month abbreviation for readability
+    day = str(parsed_date.day)
     return build_and_return_directory(save_folder / year / month / day)
 
 
-def by_sender_email(save_folder: Path, sender: str) -> Path:
+def by_sender_email(save_folder: Path, sender: str | None) -> Path:
     """
     Creates a folder structure based on the sender's email address.
 
     Args:
         save_folder (Path): The base folder where the attachments will be saved.
-        sender (str): The sender's email address.
+        sender (str | None): The sender's email address.
 
     Returns:
         Path: The path to the created directory.
     """
-    domain = (
-        (sender.split("@")[-1]).replace(">", "") if "@" in sender else "unknown_sender"
-    )
+    if not sender:
+        return build_and_return_directory(save_folder / "unknown_sender" / "unknown_sender")
+
+    domain = (sender.split("@")[-1]).replace(">", "") if "@" in sender else "unknown_sender"
     if "<" in sender:
         sender = sender.split("<")[1].split(">")[0]
+    sender = sender or "unknown_sender"
     return build_and_return_directory(save_folder / domain / sender)
 
 

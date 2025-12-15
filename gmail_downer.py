@@ -139,22 +139,23 @@ def generate_mail_messages(
         if session_typ != "OK":
             raise Exception("Error searching Inbox.")
         for msg_id in data[0].split():
-            if msg_id.decode() not in processed_ids:
+            msg_id_str = msg_id.decode()
+            if msg_id_str not in processed_ids:
                 for attempt in range(max_attempts):
                     msg_typ, message_parts = imap_session.fetch(msg_id, "(RFC822)")
                     if msg_typ == "OK":
                         yield message_from_bytes(message_parts[0][1])
-                        processed_ids.add(msg_id)
+                        processed_ids.add(msg_id_str)
                         with processed_id_file.open("a") as resume:
-                            resume.write(f"{msg_id},")
+                            resume.write(f"{msg_id_str},")
                         break
                     else:
                         logging.warning(
-                            f"Error fetching mail {msg_id}, attempt {attempt + 1}/{max_attempts}"
+                            f"Error fetching mail {msg_id_str}, attempt {attempt + 1}/{max_attempts}"
                         )
                 else:
                     logging.error(
-                        f"Failed to fetch mail {msg_id} after {max_attempts} attempts."
+                        f"Failed to fetch mail {msg_id_str} after {max_attempts} attempts."
                     )
 
 
@@ -175,9 +176,8 @@ def save_attachments(
         file_name_counter (Counter): A counter to manage duplicate file names.
         file_name_hashes (defaultdict): A dictionary to track unique attachments by hash.
     """
-    msg_from = message["From"]
-    msg_date = message["Date"]
-    msg_domain = (msg_from.split("@")[-1]).replace(">", "") if "@" in msg_from else None
+    msg_from = message.get("From") or "unknown_sender"
+    msg_date = message.get("Date")
 
     if sort_by == SortMethod.DATE:
         directory = organize.by_date(directory, msg_date)
@@ -191,65 +191,73 @@ def save_attachments(
         ):
             continue
         file_name = part.get_filename()
-        if file_name:
-            logging.debug(f"Original file name: {file_name}")
-            file_name = (
-                decode_mime_words(file_name)
-                .replace("/", "_")
-                .replace("\\", "_")
-                .replace(":", "_")
-                .replace("*", "_")
-                .replace("?", "_")
-                .replace('"', "_")
-                .replace("<", "_")
-                .replace(">", "_")
-                .replace("|", "_")
-                .replace("\n", "")
-                .replace("\r", "")
+        if not file_name:
+            # Fallback for nameless attachments
+            file_name_counter["__unnamed__"] += 1
+            subtype = part.get_content_subtype() or "bin"
+            file_name = f"attachment{file_name_counter['__unnamed__']}.{subtype}"
+
+        logging.debug(f"Original file name: {file_name}")
+        file_name = (
+            decode_mime_words(file_name)
+            .replace("/", "_")
+            .replace("\\", "_")
+            .replace(":", "_")
+            .replace("*", "_")
+            .replace("?", "_")
+            .replace('"', "_")
+            .replace("<", "_")
+            .replace(">", "_")
+            .replace("|", "_")
+            .replace("\n", "")
+            .replace("\r", "")
+        )
+        logging.debug(f"Sanitized file name: {file_name}")
+        # Limit the file name length to avoid exceeding the Windows path length limit
+        max_length = 150
+        if len(file_name) > max_length:
+            file_name = file_name[:max_length] + os.path.splitext(file_name)[1]
+        payload = part.get_payload(decode=True)
+        if not payload:
+            logging.info("Skipped attachment with empty payload")
+            continue
+
+        x_hash = md5(payload).hexdigest()
+        if x_hash not in file_name_hashes[file_name]:
+            file_name_counter[file_name] += 1
+            file_str, file_extension = os.path.splitext(file_name)
+            new_file_name = (
+                f"{file_str}(v.{file_name_counter[file_name]}){file_extension}"
+                if file_name_counter[file_name] > 1
+                else file_name
             )
-            logging.debug(f"Sanitized file name: {file_name}")
-            # Limit the file name length to avoid exceeding the Windows path length limit
-            max_length = 150
-            if len(file_name) > max_length:
-                file_name = file_name[:max_length] + os.path.splitext(file_name)[1]
-            payload = part.get_payload(decode=True)
-            if payload:
-                x_hash = md5(payload).hexdigest()
-                if x_hash not in file_name_hashes[file_name]:
-                    file_name_counter[file_name] += 1
-                    file_str, file_extension = os.path.splitext(file_name)
-                    new_file_name = (
-                        f"{file_str}(v.{file_name_counter[file_name]}){file_extension}"
-                        if file_name_counter[file_name] > 1
-                        else file_name
-                    )
-                    file_name_hashes[file_name].add(x_hash)
-                    if sort_by == SortMethod.EXTENSION:
-                        file_dir = directory / (
-                            file_extension.lower().strip(".")
-                            if file_extension
-                            else "other"
-                        )
-                    elif sort_by == SortMethod.SIZE:
-                        file_dir = directory / organize.by_size(
-                            len(payload)
-                        )
-                    elif sort_by == SortMethod.MIMETYPE:
-                        file_dir = directory / (
-                            organize.by_mime_type(file_name)
-                        )
-                    else:
-                        file_dir = directory
-                    file_dir = organize.build_and_return_directory(file_dir)
-                    file_path = (file_dir / new_file_name).resolve()
-                    # Use Windows extended-length path prefix for long paths on Windows only
-                    if os.name == 'nt' and len(str(file_path)) > 260:
-                        file_path = Path(rf"\\?\{file_path}")
-                    if not file_path.exists():
-                        with file_path.open("wb") as fp:
-                            fp.write(payload)
-                    else:
-                        logging.info(f"\tExists in destination: {new_file_name}")
+            file_name_hashes[file_name].add(x_hash)
+            if sort_by == SortMethod.EXTENSION:
+                file_dir = directory / (
+                    file_extension.lower().strip(".")
+                    if file_extension
+                    else "other"
+                )
+            elif sort_by == SortMethod.SIZE:
+                file_dir = directory / organize.by_size(
+                    len(payload)
+                )
+            elif sort_by == SortMethod.MIMETYPE:
+                file_dir = directory / (
+                    organize.by_mime_type(file_name)
+                )
+            else:
+                file_dir = directory
+            file_dir = organize.build_and_return_directory(file_dir)
+            file_path = (file_dir / new_file_name).resolve()
+            # Use Windows extended-length path prefix for long paths on Windows only
+            if os.name == 'nt' and len(str(file_path)) > 260:
+                file_path = Path(rf"\\?\{file_path}")
+            if not file_path.exists():
+                with file_path.open("wb") as fp:
+                    fp.write(payload)
+            else:
+                logging.info(f"\tExists in destination: {new_file_name}")
 
 
 def main():
@@ -273,19 +281,23 @@ def main():
         password = os.getenv("EMAIL_PASSWORD") or getpass("Enter your password: ")
         save_path = Path(input("Enter Destination path: "))
         save_path.mkdir(parents=True, exist_ok=True)
-        sort_by = SortMethod(
-            int(
-                input(
-                    """Enter sort method [1-6]:
+        while True:
+            try:
+                sort_choice = int(
+                    input(
+                        """Enter sort method [1-5]:
             1. Extension
             2. Size
             3. MIME Type
             4. Date Year -> Month -> Day
             5. Domain -> Sender
         """
+                    ).strip()
                 )
-            )
-        )
+                sort_by = SortMethod(sort_choice)
+                break
+            except (ValueError, KeyError):
+                print("Please enter a number between 1 and 5.")
         save_state(resume_file, user_name, save_path, sort_by)
 
     for msg in generate_mail_messages(
