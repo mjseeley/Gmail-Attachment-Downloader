@@ -241,7 +241,10 @@ def save_attachments(
                     else:
                         file_dir = directory
                     file_dir = organize.build_and_return_directory(file_dir)
-                    file_path = Path(rf"\\?\{file_dir / new_file_name}").resolve()
+                    file_path = (file_dir / new_file_name).resolve()
+                    # Use Windows extended-length path prefix for long paths on Windows only
+                    if os.name == 'nt' and len(str(file_path)) > 260:
+                        file_path = Path(rf"\\?\{file_path}")
                     if not file_path.exists():
                         with file_path.open("wb") as fp:
                             fp.write(payload)
