@@ -5,6 +5,7 @@ from hashlib import md5
 from getpass import getpass
 import imaplib
 import os
+import json
 import logging
 from collections import defaultdict, Counter
 from pathlib import Path
@@ -28,6 +29,7 @@ class SortMethod(Enum):
 
 
 IMAP_SERVER = "imap.gmail.com"
+MANIFEST_FILE = Path("file_manifest.json")
 
 
 def recover(
@@ -88,6 +90,28 @@ def save_state(resume_file: Path, user_name: str, save_path: Path, sort_by: Sort
         f.write(f"user_name = {user_name}\n")
         f.write(f"save_path = {save_path}\n")
         f.write(f"sort_by = {sort_by.name}\n")
+
+
+def load_manifest(manifest_path: Path) -> tuple[Counter, defaultdict]:
+    """Load persisted counters and hashes to avoid overwriting on resume."""
+    if manifest_path.exists():
+        try:
+            data = json.loads(manifest_path.read_text())
+            counters = Counter(data.get("counters", {}))
+            hashes_raw = data.get("hashes", {})
+            hashes = defaultdict(set, {k: set(v) for k, v in hashes_raw.items()})
+            return counters, hashes
+        except Exception:
+            logging.warning("Manifest file unreadable; starting fresh.")
+    return Counter(), defaultdict(set)
+
+
+def save_manifest(manifest_path: Path, counters: Counter, hashes: defaultdict):
+    data = {
+        "counters": counters,
+        "hashes": {k: list(v) for k, v in hashes.items()},
+    }
+    manifest_path.write_text(json.dumps(data, indent=2))
 
 
 def decode_mime_words(s: str) -> str:
@@ -165,6 +189,7 @@ def save_attachments(
     sort_by: SortMethod,
     file_name_counter: Counter,
     file_name_hashes: defaultdict,
+    manifest_path: Path,
 ):
     """
     Saves attachments from an email message to the specified directory.
@@ -256,6 +281,7 @@ def save_attachments(
             if not file_path.exists():
                 with file_path.open("wb") as fp:
                     fp.write(payload)
+                save_manifest(manifest_path, file_name_counter, file_name_hashes)
             else:
                 logging.info(f"\tExists in destination: {new_file_name}")
 
@@ -264,8 +290,7 @@ def main():
     """
     Main function that drives the script, handling user input, downloading attachments, and organizing them.
     """
-    file_name_counter = Counter()
-    file_name_hashes = defaultdict(set)
+    file_name_counter, file_name_hashes = load_manifest(MANIFEST_FILE)
     resume_file = Path("resume.txt")
     processed_id_file = Path("processed_ids.txt")
 
@@ -303,10 +328,18 @@ def main():
     for msg in generate_mail_messages(
         user_name, password, processed_id_file, processed_ids
     ):
-        save_attachments(msg, save_path, sort_by, file_name_counter, file_name_hashes)
+        save_attachments(
+            msg,
+            save_path,
+            sort_by,
+            file_name_counter,
+            file_name_hashes,
+            MANIFEST_FILE,
+        )
 
     processed_id_file.unlink(missing_ok=True)
     resume_file.unlink(missing_ok=True)
+    save_manifest(MANIFEST_FILE, file_name_counter, file_name_hashes)
 
 
 if __name__ == "__main__":
