@@ -2,12 +2,14 @@
 
 ## Description
 
-This script connects to a Gmail account via IMAP, identifies all emails containing attachments, and downloads those attachments. Users can specify a directory to save the attachments and choose from various sorting methods, such as by file extension, size, type, sender, or date. The script also supports session recovery to handle interruptions and avoid redownloading previously processed emails.
+This script connects to a Gmail account via IMAP, lets you select a mailbox folder, identifies all emails containing attachments, and downloads those attachments. Users can specify a directory to save the attachments and choose from various sorting methods, such as by file extension, size, type, sender, or date. The script supports session recovery to handle interruptions and avoid redownloading previously processed emails, with a persistent manifest file to prevent overwriting attachments across sessions.
 
 ## Features
 
 - **IMAP Connection**: Connects securely to Gmail via IMAP to access emails.
-- **Attachment Download**: Downloads all attachments found in the mailbox.
+- **Folder Selection**: Lists all available Gmail folders and lets you choose which one to process.
+- **Attachment Download**: Downloads all attachments found in the selected folder.
+- **Unnamed Attachment Handling**: Automatically generates a filename for attachments that have none.
 - **Sorting Methods**: Attachments can be sorted by:
   - File Extension
   - File Size
@@ -15,6 +17,8 @@ This script connects to a Gmail account via IMAP, identifies all emails containi
   - Date Year -> Month -> Day
   - Sender Domain -> sender
 - **Session Recovery**: Supports resuming the download process to avoid redownloading attachments.
+- **Manifest Persistence**: Saves a `file_manifest.json` file to track downloaded files across sessions, preventing overwrites on resume.
+- **Windows Long Path Support**: Automatically applies the `\\?\` extended-length path prefix for file paths exceeding 260 characters on Windows.
 - **Environment Variable Support**: Optionally set your password via the `EMAIL_PASSWORD` environment variable.
 
 ## Requirements
@@ -26,11 +30,12 @@ This script connects to a Gmail account via IMAP, identifies all emails containi
   - `getpass` (Standard Library)
   - `imaplib` (Standard Library)
   - `os` (Standard Library)
+  - `re` (Standard Library)
+  - `json` (Standard Library)
   - `logging` (Standard Library)
   - `collections` (Standard Library)
   - `pathlib` (Standard Library)
   - `enum` (Standard Library)
-  - `mimetypes` (Standard Library)
   - `organize` (Included Custom Module)
 
 ## Additional requirements
@@ -73,11 +78,13 @@ This script connects to a Gmail account via IMAP, identifies all emails containi
 2. **User Prompts**
 
    - The script will prompt for your Gmail credentials (or use the `EMAIL_PASSWORD` environment variable).
+   - You will be shown a numbered list of available Gmail folders and asked to select one.
    - You will be asked to specify a directory where attachments should be saved.
    - You can select a sorting method to organize the attachments.
 
 3. **Resuming Sessions**
-   - If interrupted, the script can resume from where it left off by recovering from saved state files (`resume.txt` and `processed_ids.txt`).
+   - If interrupted, the script can resume from where it left off by recovering from saved state files (`resume.txt`, `processed_ids.txt`, and `file_manifest.json`).
+   - The manifest file tracks file counters and content hashes so attachments are never overwritten when resuming.
 
 ### Using Environment Variables
 

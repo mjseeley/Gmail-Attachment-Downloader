@@ -5,6 +5,7 @@ from hashlib import md5
 from getpass import getpass
 import imaplib
 import os
+import re
 import json
 import logging
 from collections import defaultdict, Counter
@@ -16,9 +17,6 @@ import organize
 logging.basicConfig(
     level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
 )
-
-# TODO: prevent overwriting of files on resume since the count has been reset (tag the files with the message id?)
-
 
 class SortMethod(Enum):
     EXTENSION = 1  # working
@@ -137,6 +135,7 @@ def generate_mail_messages(
     processed_id_file: Path,
     processed_ids: set,
     max_attempts: int = 3,
+    folder_names=[],
 ):
     """
     Generates email messages from the Gmail account that have attachments.
@@ -158,29 +157,63 @@ def generate_mail_messages(
         except imaplib.IMAP4.error:
             logging.error("Login failed. Please check your credentials.")
             return
-        imap_session.select('"[Gmail]/All Mail"')
-        session_typ, data = imap_session.search(None, '(X-GM-RAW "has:attachment")')
-        if session_typ != "OK":
-            raise Exception("Error searching Inbox.")
-        for msg_id in data[0].split():
-            msg_id_str = msg_id.decode()
-            if msg_id_str not in processed_ids:
-                for attempt in range(max_attempts):
-                    msg_typ, message_parts = imap_session.fetch(msg_id, "(RFC822)")
-                    if msg_typ == "OK":
-                        yield message_from_bytes(message_parts[0][1])
-                        processed_ids.add(msg_id_str)
-                        with processed_id_file.open("a") as resume:
-                            resume.write(f"{msg_id_str},")
+        if imap_session.state == "AUTH":
+            print("Authenticated, ready to select a mailbox")
+            status, folders = imap_session.list()
+            if status == 'OK':
+                for folder in folders:
+                    match = re.match(r'\(.*?\) ".*?" "(.*?)"', folder.decode())
+                    if match:
+                        folder_names.append(match.group(1))
+                print("\nAvailable folders:")
+                for i, name in enumerate(folder_names, 1):
+                    print(f"  {i}. {name}")
+
+            # Get user selection
+            while True:
+                try:
+                    choice = int(input("\nSelect a folder (number): "))
+                    if 1 <= choice <= len(folder_names):
+                        selected_folder = folder_names[choice - 1]
                         break
                     else:
-                        logging.warning(
-                            f"Error fetching mail {msg_id_str}, attempt {attempt + 1}/{max_attempts}"
+                        print(f"Please enter a number between 1 and {len(folder_names)}")
+                except ValueError:
+                    print("Please enter a valid number")
+            # Select the chosen folder
+            print(f"\nOpening: {selected_folder}")
+            status, count = imap_session.select(f'"{selected_folder}"')
+
+            if status == 'OK':
+                print(f"Messages in folder: {count[0].decode()}")
+
+            try:
+                imap_session.select(f'"{selected_folder}"', readonly=True)
+            except imaplib.IMAP4.error:
+                logging.error("Failed to select mailbox. Please check your mailbox settings.")
+                return
+            session_typ, data = imap_session.search(None, '(X-GM-RAW "has:attachment")')
+            if session_typ != "OK":
+                raise Exception("Error searching Inbox.")
+            for msg_id in data[0].split():
+                msg_id_str = msg_id.decode()
+                if msg_id_str not in processed_ids:
+                    for attempt in range(max_attempts):
+                        msg_typ, message_parts = imap_session.fetch(msg_id, "(RFC822)")
+                        if msg_typ == "OK":
+                            yield message_from_bytes(message_parts[0][1])
+                            processed_ids.add(msg_id_str)
+                            with processed_id_file.open("a") as resume:
+                                resume.write(f"{msg_id_str},")
+                            break
+                        else:
+                            logging.warning(
+                                f"Error fetching mail {msg_id_str}, attempt {attempt + 1}/{max_attempts}"
+                            )
+                    else:
+                        logging.error(
+                            f"Failed to fetch mail {msg_id_str} after {max_attempts} attempts."
                         )
-                else:
-                    logging.error(
-                        f"Failed to fetch mail {msg_id_str} after {max_attempts} attempts."
-                    )
 
 
 def save_attachments(
